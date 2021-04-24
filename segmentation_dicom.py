@@ -20,35 +20,57 @@ import nibabel as nb
 CT_OFFSET = 1024
 ZERO_VALUE = -2000
 
+def get_series_name_and_len(folder_name):
+    volume_dict = dict()
+    
+    for filename in os.listdir(folder_name):
+        dicom = pydicom.read_file(os.path.join(folder_name, filename))
+        
+        volume_name = dicom.SeriesDescription
+        if volume_name in volume_dict.keys():
+            volume_dict[volume_name] += 1
+        else:
+            volume_dict[volume_name] = 1
+    return volume_dict
 
-def read_dicom_array(in_path):
+def read_dicom_array(in_path, volume_name):
     # type: (str) -> Tuple[int, np.ndarray]
     lung_dicom = pydicom.read_file(in_path)
     
-    z_location = lung_dicom.ImagePositionPatient[2]
+    if lung_dicom.SeriesDescription != volume_name:
+        return None
     
+    try:
+        im_pos_pat = lung_dicom.ImagePositionPatient
+    except:
+        try:
+            im_pos_pat = [float(x) for x in lung_dicom[('0020', '0032')]]
+        except:
+            return None
+    z_location = im_pos_pat[2]    
+        
     slice_array = lung_dicom.pixel_array
     slice_array[slice_array == ZERO_VALUE] = 0
     
     global affine, min_z
-    affine = np.asarray([[lung_dicom.PixelSpacing[0], 0, 0, lung_dicom.ImagePositionPatient[0]], 
-                         [0, lung_dicom.PixelSpacing[1], 0, lung_dicom.ImagePositionPatient[1]],
+    affine = np.asarray([[lung_dicom.PixelSpacing[0], 0, 0, im_pos_pat[0]], 
+                         [0, lung_dicom.PixelSpacing[1], 0, im_pos_pat[1]],
                          [0, 0, 0, 0],
                          [0, 0, 0, 1]])
-    
-    F11, F21, F31 = lung_dicom.ImageOrientationPatient[3:]
-    F12, F22, F32 = lung_dicom.ImageOrientationPatient[:3]
     
     if z_location < min_z:
         min_z = z_location
         
     return int(lung_dicom.InstanceNumber), slice_array.astype(np.int16) - CT_OFFSET, z_location
 
-def read_ct_scan(folder_name):
+def read_ct_scan(folder_name, volume_name):
         # Read the slices from the dicom file
-        slices = [read_dicom_array(folder_name + filename) for filename in os.listdir(folder_name)]
+        slices = []
+        for filename in os.listdir(folder_name):
+            slice = read_dicom_array(os.path.join(folder_name, filename), volume_name)
+            if not slice is None:
+                slices.append(slice)
         
-        print(slices[0])
         # Sort the dicom slices in their respective order
         s_slices = sorted(slices, key = lambda x: x[2])
         
@@ -169,10 +191,10 @@ def get_segmented_lungs(in_im, plot=False, treshold=-1700):
         
     return (binary_er > 0) * 1.0
 
-def segmentation(path_to_dicom_folder, save_filename, thresh):
+def segmentation(path_to_dicom_folder, save_filename, thresh, volume_name):
     SAVE_FILENAME_NII = save_filename
-    ct_scan = read_ct_scan(path_to_dicom_folder) 
-    print('Scan Dimensions',ct_scan.shape)
+    ct_scan = read_ct_scan(path_to_dicom_folder, volume_name) 
+    print('Scan Dimensions:',ct_scan.shape)
     global min_z
     affine[2, 3] = min_z
 
@@ -183,19 +205,31 @@ def segmentation(path_to_dicom_folder, save_filename, thresh):
     affine[1, 3] *= -1
     print(affine)
     masks = []
+    print(ct_scan.min())
     
     for sc in ct_scan:
         mask = get_segmented_lungs(sc, False, thresh)
         masks.append(mask.reshape(mask.shape[0], mask.shape[1]))
-    
+
     result = np.moveaxis(np.asarray(masks), [0], [2])
     new_image = nb.Nifti1Image(result.astype('float'), affine)
     nb.save(new_image, SAVE_FILENAME_NII)
     
 if __name__=="__main__":
-    thresh = -800
+    thresh = -1800
     affine = None
     min_z = 10000
-    save_filename = "C:\\Users\\User\\algorithms\\Lungs_db\\data_1\\preds\\Alekseev_body_pred_2.nii.gz"
-    path_to_dicom_folder = 'C:\\Users\\User\\algorithms\\Lungs_db\\data_1\\CT_06_09_20_Alekseev\\'
-    segmentation(path_to_dicom_folder, save_filename, thresh)
+    save_filename = "C:\\Users\\User\\algorithms\\Lungs_db\\data_1\\preds\\Chigineva_body_pred_2.nii.gz"
+    path_to_dicom_folder = 'C:\\Users\\User\\algorithms\\Lungs_db\\data_1\\Chigineva\\'
+    
+    volume_dict = get_series_name_and_len(path_to_dicom_folder)
+    
+    print('Доступные объемы:')
+    for i, volume_name in enumerate(volume_dict):
+        print(i, volume_name, volume_dict[volume_name])
+        
+    print('Выберете объем (введите его номер):')
+    num_vol = int(input())
+    print(list(volume_dict.keys())[num_vol])
+    volume_name = list(volume_dict.keys())[num_vol]
+    segmentation(path_to_dicom_folder, save_filename, thresh, volume_name)
