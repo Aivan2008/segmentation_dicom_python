@@ -17,6 +17,9 @@ import scipy.misc
 import cv2
 import nibabel as nb
 
+thresh = -1800
+affine = None
+min_z = 10000
 CT_OFFSET = 1024
 ZERO_VALUE = -2000
 
@@ -191,11 +194,15 @@ def get_segmented_lungs(in_im, plot=False, treshold=-1700):
         
     return (binary_er > 0) * 1.0
 
-def segmentation(path_to_dicom_folder, save_filename, thresh, volume_name):
+def segmentation(path_to_dicom_folder, save_filename, volume_name, progress_bar = None):
+    global tresh, affine, min_z
+    thresh = -1800
+    affine = None
+    min_z = 10000
+    
     SAVE_FILENAME_NII = save_filename
     ct_scan = read_ct_scan(path_to_dicom_folder, volume_name) 
     print('Scan Dimensions:',ct_scan.shape)
-    global min_z
     affine[2, 3] = min_z
 
     # Умножаем элементы на -1, а саму картинку мы повернем на 270 градусов, уж не знаю зач, но надо
@@ -207,18 +214,17 @@ def segmentation(path_to_dicom_folder, save_filename, thresh, volume_name):
     masks = []
     print(ct_scan.min())
     
-    for sc in ct_scan:
+    for i, sc in enumerate(ct_scan):
         mask = get_segmented_lungs(sc, False, thresh)
         masks.append(mask.reshape(mask.shape[0], mask.shape[1]))
+        if progress_bar is not None:
+            progress_bar.setValue(i / ct_scan.shape[0] * 100)
 
     result = np.moveaxis(np.asarray(masks), [0], [2])
     new_image = nb.Nifti1Image(result.astype('float'), affine)
     nb.save(new_image, SAVE_FILENAME_NII)
     
 if __name__=="__main__":
-    thresh = -1800
-    affine = None
-    min_z = 10000
     save_filename = "C:\\Users\\User\\algorithms\\Lungs_db\\data_1\\preds\\Chigineva_body_pred_2.nii.gz"
     path_to_dicom_folder = 'C:\\Users\\User\\algorithms\\Lungs_db\\data_1\\Chigineva\\'
     
@@ -232,4 +238,4 @@ if __name__=="__main__":
     num_vol = int(input())
     print(list(volume_dict.keys())[num_vol])
     volume_name = list(volume_dict.keys())[num_vol]
-    segmentation(path_to_dicom_folder, save_filename, thresh, volume_name)
+    segmentation(path_to_dicom_folder, save_filename, volume_name)
