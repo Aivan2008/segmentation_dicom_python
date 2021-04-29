@@ -223,6 +223,7 @@ def segmentation(path_to_dicom_folder, save_filename, volume_name, progress_bar 
     result = np.moveaxis(np.asarray(masks), [0], [2])
     new_image = nb.Nifti1Image(result.astype('float'), affine)
     nb.save(new_image, SAVE_FILENAME_NII)
+    progress_bar.setValue(100)
     
 if __name__=="__main__":
     save_filename = "C:\\Users\\User\\algorithms\\Lungs_db\\data_1\\preds\\Chigineva_body_pred_2.nii.gz"
