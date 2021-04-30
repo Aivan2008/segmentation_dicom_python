@@ -196,7 +196,7 @@ def get_segmented_lungs(in_im, plot=False, treshold=-1700):
 
 def segmentation(path_to_dicom_folder, save_filename, volume_name, progress_bar = None):
     global tresh, affine, min_z
-    thresh = -1800
+    thresh = -1700
     affine = None
     min_z = 10000
     
@@ -212,6 +212,8 @@ def segmentation(path_to_dicom_folder, save_filename, volume_name, progress_bar 
     affine[1, 3] *= -1
     print(affine)
     masks = []
+    if ct_scan.min() == -1024:
+        thresh = -700
     print(ct_scan.min())
     
     for i, sc in enumerate(ct_scan):
@@ -219,15 +221,19 @@ def segmentation(path_to_dicom_folder, save_filename, volume_name, progress_bar 
         masks.append(mask.reshape(mask.shape[0], mask.shape[1]))
         if progress_bar is not None:
             progress_bar.setValue(i / ct_scan.shape[0] * 100)
-
+    if True:
+        cv2.imshow('test', masks[50])
+        cv2.waitKey()
+        cv2.destroyAllWindows()
     result = np.moveaxis(np.asarray(masks), [0], [2])
     new_image = nb.Nifti1Image(result.astype('float'), affine)
     nb.save(new_image, SAVE_FILENAME_NII)
-    progress_bar.setValue(100)
+    if progress_bar is not None:
+        progress_bar.setValue(100)
     
 if __name__=="__main__":
-    save_filename = "C:\\Users\\User\\algorithms\\Lungs_db\\data_1\\preds\\Chigineva_body_pred_2.nii.gz"
-    path_to_dicom_folder = 'C:\\Users\\User\\algorithms\\Lungs_db\\data_1\\Chigineva\\'
+    save_filename = "C:\\Users\\User\\algorithms\\Lungs_db\\data_2\\preds_segm_module\\3_CT.nii.gz"
+    path_to_dicom_folder = 'C:\\Users\\User\\algorithms\\Lungs_db\\data_2\\3_CT\\3_CT_data'
     
     volume_dict = get_series_name_and_len(path_to_dicom_folder)
     
