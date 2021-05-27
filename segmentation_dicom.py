@@ -23,6 +23,14 @@ min_z = 10000
 CT_OFFSET = 1024
 ZERO_VALUE = -2000
 
+def inverse_segmentation(img):
+    """
+    Функция инверсии разметки, закрашивает все, что было неразмечено и удаляет все, что" конектится с краями
+    """
+    new_img = (img == 0.) * 1.
+    cleared = clear_border(new_img)
+    return cleared
+
 def get_series_name_and_len(folder_name):
     volume_dict = dict()
     
@@ -126,6 +134,29 @@ def get_segmented_lungs(in_im, plot=False, treshold=-1700):
         plots[2].axis('off')
         plots[2].imshow(label_image, cmap=plt.cm.gist_earth)
         plots[2].set_title('Label Components')
+
+
+    
+    selem = disk(2)
+    binary_palka = binary_dilation(label_image, selem)
+    
+    label_binary_palka = label(binary_palka)
+    areas_palka = [r.area for r in regionprops(label_binary_palka)]
+    areas_palka.sort()
+    if len(areas_palka) > 1:
+        for region in regionprops(label_binary_palka):
+            if region.area < areas_palka[-1]:
+                for coordinates in region.coords:                
+                       label_binary_palka[coordinates[0], coordinates[1]] = 0
+    label_binary_palka = binary_closing((label_binary_palka > 0) * 1.0, disk(2))
+    
+    binary_body = (label_binary_palka > 0) * 1.0
+    binary_lung = inverse_segmentation(binary_body)
+
+    label_all = (label_image > 0) * 1.0
+    binary_palka = ((label_all - binary_body - binary_lung) > 0) * 2.0
+    binary_palka[:, int(binary_palka.shape[0]/2):binary_palka.shape[0]] = 0
+    
     '''
     Step 5: Erosion operation with a disk of radius 2. This operation is 
     seperate the lung nodules attached to the blood vessels.
@@ -137,7 +168,7 @@ def get_segmented_lungs(in_im, plot=False, treshold=-1700):
         plots[3].imshow(binary, cmap=plt.cm.bone)
         plots[3].set_title('Erosion')
     '''
-    Step 4: Keep the labels with 2 largest areas.
+    Step 4: Keep the labels with 1 largest area.
     '''
     label_binary = label(binary)
     areas = [r.area for r in regionprops(label_binary)]
@@ -152,6 +183,8 @@ def get_segmented_lungs(in_im, plot=False, treshold=-1700):
         plots[4].axis('off')
         plots[4].imshow(binary, cmap=plt.cm.bone) 
         plots[4].set_title('Keep Biggest 2')
+    
+    
     '''
     Step 5: Erosion operation with a disk of radius 2. This operation is 
     seperate the lung nodules attached to the blood vessels.
@@ -172,7 +205,7 @@ def get_segmented_lungs(in_im, plot=False, treshold=-1700):
         plots[6].axis('off')
         plots[6].imshow(binary, cmap=plt.cm.bone) 
         plots[6].set_title('Close Image')
-    
+    binary = binary_dilation(binary, selem)
     '''
     Step 7: Fill in the small holes inside the binary mask of lungs.
     '''
@@ -192,7 +225,16 @@ def get_segmented_lungs(in_im, plot=False, treshold=-1700):
         plots[8].imshow(im, cmap=plt.cm.bone) 
         plots[8].set_title('Binary Masked Input')
         
-    return (binary_er > 0) * 1.0
+    return (binary_er > 0) * 1.0 + binary_palka
+
+def find_staff(volume):
+    for i in range(volume.shape[0]):
+        for j in range(volume.shape[1]):
+            for k in range(volume.shape[2]):
+                if volume[i, j, k] == 2:
+                    if volume[i-10: i+10, j-10: j+10, k-10: k+10].sum() / 2 < 1700:
+                        volume[i, j, k] = 0
+                    
 
 def segmentation(path_to_dicom_folder, save_filename, volume_name, progress_bar = None):
     global tresh, affine, min_z
@@ -220,20 +262,26 @@ def segmentation(path_to_dicom_folder, save_filename, volume_name, progress_bar 
         mask = get_segmented_lungs(sc, False, thresh)
         masks.append(mask.reshape(mask.shape[0], mask.shape[1]))
         if progress_bar is not None:
-            progress_bar.setValue(i / ct_scan.shape[0] * 100)
+            progress_bar.setValue(i / ct_scan.shape[0] * 60)
     if True:
         cv2.imshow('test', masks[50])
         cv2.waitKey()
         cv2.destroyAllWindows()
     result = np.moveaxis(np.asarray(masks), [0], [2])
+    
+    find_staff(result)
+    if progress_bar is not None:
+        progress_bar.setValue(i / ct_scan.shape[0] * 80)
+    find_staff(result)
+    print(result.shape)
     new_image = nb.Nifti1Image(result.astype('float'), affine)
     nb.save(new_image, SAVE_FILENAME_NII)
     if progress_bar is not None:
         progress_bar.setValue(100)
     
 if __name__=="__main__":
-    save_filename = "C:\\Users\\User\\algorithms\\Lungs_db\\data_2\\preds_segm_module\\3_CT.nii.gz"
-    path_to_dicom_folder = 'C:\\Users\\User\\algorithms\\Lungs_db\\data_2\\3_CT\\3_CT_data'
+    save_filename = "C:\\Users\\User\\algorithms\\Lungs_db\\data_3\\RLAD.nii.gz"
+    path_to_dicom_folder = 'C:\\Users\\User\\algorithms\\Lungs_db\\data_3\\RLAD\\synt_data'
     
     volume_dict = get_series_name_and_len(path_to_dicom_folder)
     
