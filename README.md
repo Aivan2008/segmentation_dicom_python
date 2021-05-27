@@ -15,6 +15,7 @@ data_3
             N_RLAD...body_Segment_1.nii - аннотация для тела и трубки
             N_RLAD...body_Segment_1.stl
             stick_transformed.stl
+            Volume_name.txt
         pred
         └── Lung segmentation.nii - предсказание модуля слайсера
             Pred_segmentation.nii - наше предсказание 
