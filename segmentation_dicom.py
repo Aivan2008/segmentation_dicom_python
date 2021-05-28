@@ -16,6 +16,8 @@ import pydicom
 import scipy.misc
 import cv2
 import nibabel as nb
+from numba import njit
+
 
 thresh = -1800
 affine = None
@@ -100,10 +102,19 @@ def plot_ct_scan(scan):
     ax1.imshow(montage(scan), cmap=plt.cm.bone) 
     ax1.axis('off')
     
-def get_segmented_lungs(in_im, plot=False, treshold=-1700):
+def get_segmented_lungs(in_im, plot=False, threshold=0.26):
     im = in_im.copy() # don't change the input
     im = cv2.rotate(im, cv2.ROTATE_90_COUNTERCLOCKWISE)
     im = cv2.flip(im, 0)
+    
+    if threshold > 0 and threshold < 1:
+        data = im
+
+        min1 = data.min()
+        min2 = data[data != min1].min()
+        data[data == min1] = min2
+
+        im = (data - data.min()) / (data.max() - data.min())
     '''
     This funtion segments the lungs from the given 2D slice.
     '''
@@ -113,7 +124,7 @@ def get_segmented_lungs(in_im, plot=False, treshold=-1700):
     '''
     Step 1: Convert into a binary image. 
     '''
-    binary = im > treshold
+    binary = im > threshold
     if plot == True:
         plots[0].axis('off')
         plots[0].imshow(binary, cmap=plt.cm.bone) 
@@ -134,7 +145,6 @@ def get_segmented_lungs(in_im, plot=False, treshold=-1700):
         plots[2].axis('off')
         plots[2].imshow(label_image, cmap=plt.cm.gist_earth)
         plots[2].set_title('Label Components')
-
 
     
     selem = disk(2)
@@ -199,8 +209,8 @@ def get_segmented_lungs(in_im, plot=False, treshold=-1700):
     Step 6: Closure operation with a disk of radius 10. This operation is 
     to keep nodules attached to the lung wall.
     '''
-    selem = disk(10)
-    binary = binary_closing(binary_er, selem)
+    selem = disk(3)
+    binary_er = binary_closing(binary, selem)
     if plot == True:
         plots[6].axis('off')
         plots[6].imshow(binary, cmap=plt.cm.bone) 
@@ -227,6 +237,7 @@ def get_segmented_lungs(in_im, plot=False, treshold=-1700):
         
     return (binary_er > 0) * 1.0 + binary_palka
 
+@njit
 def find_staff(volume):
     for i in range(volume.shape[0]):
         for j in range(volume.shape[1]):
@@ -254,16 +265,17 @@ def segmentation(path_to_dicom_folder, save_filename, volume_name, progress_bar 
     affine[1, 3] *= -1
     print(affine)
     masks = []
-    if ct_scan.min() == -1024:
-        thresh = -700
     print(ct_scan.min())
     
+    if ct_scan.min() == -1024:
+        thresh = -700
+        
     for i, sc in enumerate(ct_scan):
         mask = get_segmented_lungs(sc, False, thresh)
         masks.append(mask.reshape(mask.shape[0], mask.shape[1]))
         if progress_bar is not None:
             progress_bar.setValue(i / ct_scan.shape[0] * 60)
-    if True:
+    if False:
         cv2.imshow('test', masks[50])
         cv2.waitKey()
         cv2.destroyAllWindows()
@@ -272,7 +284,7 @@ def segmentation(path_to_dicom_folder, save_filename, volume_name, progress_bar 
     find_staff(result)
     if progress_bar is not None:
         progress_bar.setValue(i / ct_scan.shape[0] * 80)
-    find_staff(result)
+    #find_staff(result)
     print(result.shape)
     new_image = nb.Nifti1Image(result.astype('float'), affine)
     nb.save(new_image, SAVE_FILENAME_NII)
@@ -280,8 +292,8 @@ def segmentation(path_to_dicom_folder, save_filename, volume_name, progress_bar 
         progress_bar.setValue(100)
     
 if __name__=="__main__":
-    save_filename = "C:\\Users\\User\\algorithms\\Lungs_db\\data_3\\RLAD.nii.gz"
-    path_to_dicom_folder = 'C:\\Users\\User\\algorithms\\Lungs_db\\data_3\\RLAD\\synt_data'
+    save_filename = "C:\\Users\\User\\algorithms\\Lungs_db\\data_3\\Alekseev.nii.gz"
+    path_to_dicom_folder = 'C:\\Users\\User\\algorithms\\Lungs_db\\data_3\\Alekseev\\synt_data'
     
     volume_dict = get_series_name_and_len(path_to_dicom_folder)
     
